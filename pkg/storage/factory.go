@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/grafana/loki/pkg/storage/chunk/client/qiniu"
 	"strings"
 	"time"
 
@@ -58,6 +59,7 @@ type Config struct {
 	Swift                  openstack.SwiftConfig     `yaml:"swift"`
 	GrpcConfig             grpc.Config               `yaml:"grpc_store"`
 	Hedging                hedging.Config            `yaml:"hedging"`
+	QiniuStorageConfig     qiniu.QiniuStorageConfig  `yaml:"qiniu"`
 
 	IndexCacheValidity time.Duration `yaml:"index_cache_validity"`
 
@@ -244,6 +246,12 @@ func NewChunkClient(name string, cfg Config, schemaCfg config.SchemaConfig, clie
 		return client.NewClientWithMaxParallel(store, client.FSEncoder, cfg.MaxParallelGetChunk, schemaCfg), nil
 	case config.StorageTypeGrpc:
 		return grpc.NewStorageClient(cfg.GrpcConfig, schemaCfg)
+	case config.StorageTypeQiniu:
+		c, err := qiniu.NewQiniuObjectStorage(&cfg.QiniuStorageConfig)
+		if err != nil {
+			return nil, err
+		}
+		return client.NewClientWithMaxParallel(c, nil, cfg.MaxChunkBatchSize, schemaCfg), nil
 	default:
 		return nil, fmt.Errorf("Unrecognized storage client %v, choose one of: %v, %v, %v, %v, %v, %v, %v, %v", name, config.StorageTypeAWS, config.StorageTypeAzure, config.StorageTypeCassandra, config.StorageTypeInMemory, config.StorageTypeGCP, config.StorageTypeBigTable, config.StorageTypeBigTableHashed, config.StorageTypeGrpc)
 	}
@@ -332,6 +340,8 @@ func NewObjectClient(name string, cfg Config, clientMetrics ClientMetrics) (clie
 		return local.NewFSObjectClient(cfg.FSConfig)
 	case config.StorageTypeBOS:
 		return baidubce.NewBOSObjectStorage(&cfg.BOSStorageConfig)
+	case config.StorageTypeQiniu:
+		return qiniu.NewQiniuObjectStorage(&cfg.QiniuStorageConfig)
 	default:
 		return nil, fmt.Errorf("Unrecognized storage client %v, choose one of: %v, %v, %v, %v, %v", name, config.StorageTypeAWS, config.StorageTypeS3, config.StorageTypeGCS, config.StorageTypeAzure, config.StorageTypeFileSystem)
 	}
